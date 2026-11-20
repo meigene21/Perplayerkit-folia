@@ -32,3 +32,8 @@ jobs:
         fi
         echo "Build successful - JAR created:"
         ls -la target/PerPlayerKit-*.jar
+    - name: Upload JAR artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: PerPlayerKit-Folia
+        path: target/PerPlayerKit-*.jar

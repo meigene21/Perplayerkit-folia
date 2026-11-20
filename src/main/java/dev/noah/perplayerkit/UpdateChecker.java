@@ -18,6 +18,7 @@
  */
 package dev.noah.perplayerkit;
 
+import dev.noah.perplayerkit.util.FoliaScheduler;
 import dev.noah.perplayerkit.util.Lang;
 import okhttp3.Call;
 import okhttp3.Callback;
@@ -147,7 +148,7 @@ public final class UpdateChecker implements AutoCloseable {
         latestRelease().thenAccept(result -> {
             if (closed || result.isEmpty() || !result.get().newer() || !plugin.isEnabled()) return;
             try {
-                plugin.getServer().getScheduler().runTask(plugin, () -> {
+                FoliaScheduler.runEntity(plugin, player, () -> {
                     if (closed || !plugin.isEnabled() || !player.isOnline()
                             || plugin.getServer().getPlayer(uuid) != player
                             || !player.hasPermission("perplayerkit.admin")

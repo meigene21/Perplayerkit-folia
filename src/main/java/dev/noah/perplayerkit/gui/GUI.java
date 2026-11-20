@@ -33,12 +33,13 @@ import org.bukkit.plugin.Plugin;
 import org.ipvp.canvas.Menu;
 import org.ipvp.canvas.slot.Slot;
 
-import java.util.HashMap;
-import java.util.HashSet;
+import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
+import java.util.WeakHashMap;
+import java.util.concurrent.ConcurrentHashMap;
 
 import static dev.noah.perplayerkit.gui.ItemUtil.addHideFlags;
 import static dev.noah.perplayerkit.gui.ItemUtil.createItem;
@@ -50,7 +51,7 @@ import dev.noah.perplayerkit.commands.core.ActionGuards;
 public class GUI {
     private static final int PUBLIC_PAGE_SIZE = 27;
     private record MenuAccess(String permission, LocationFeature feature) {}
-    private static final Map<Menu, MenuAccess> menuAccess = new java.util.WeakHashMap<>();
+    private static final Map<Menu, MenuAccess> menuAccess = Collections.synchronizedMap(new WeakHashMap<>());
 
     public static boolean canUseMenu(Player player, Menu menu) {
         MenuAccess access = menuAccess.get(menu);
@@ -58,13 +59,13 @@ public class GUI {
     }
 
     private final Plugin plugin;
-    private static final Set<UUID> kitDeletionFlag = new HashSet<>();
-    private static final Set<UUID> clearedEditors = new HashSet<>();
+    private static final Set<UUID> kitDeletionFlag = ConcurrentHashMap.newKeySet();
+    private static final Set<UUID> clearedEditors = ConcurrentHashMap.newKeySet();
     public static boolean takeClearFlag(Player player) { return clearedEditors.remove(player.getUniqueId()); }
-    private static final Map<UUID, EditorContext> editorContexts = new HashMap<>();
+    private static final Map<UUID, EditorContext> editorContexts = new ConcurrentHashMap<>();
     // Last main-menu page each player viewed, so back buttons from submenus
     // (kit room, public kits) return to it instead of resetting to page 1.
-    private static final Map<UUID, Integer> lastMainMenuPage = new HashMap<>();
+    private static final Map<UUID, Integer> lastMainMenuPage = new ConcurrentHashMap<>();
 
     public enum EditorType {
         KIT,

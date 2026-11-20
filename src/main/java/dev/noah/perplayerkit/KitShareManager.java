@@ -19,6 +19,7 @@
 package dev.noah.perplayerkit;
 
 import dev.noah.perplayerkit.util.BroadcastManager;
+import dev.noah.perplayerkit.util.FoliaScheduler;
 import dev.noah.perplayerkit.util.KitSlots;
 import dev.noah.perplayerkit.util.Lang;
 import dev.noah.perplayerkit.util.PlayerUtil;
@@ -28,31 +29,39 @@ import org.bukkit.Bukkit;
 import org.bukkit.entity.Player;
 import org.bukkit.inventory.ItemStack;
 import org.bukkit.plugin.Plugin;
-import org.bukkit.scheduler.BukkitRunnable;
-import org.bukkit.scheduler.BukkitTask;
 import org.jetbrains.annotations.Nullable;
 
 import java.util.ArrayList;
-import java.util.HashMap;
 import java.util.Iterator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
 
 public class KitShareManager {
 
     public static final int REQUEST_EXPIRY_SECONDS = 120;
 
-    public static HashMap<String, ItemStack[]> kitShareMap;
+    public static Map<String, ItemStack[]> kitShareMap;
     private static KitShareManager instance;
     private final Plugin plugin;
-    private final Map<String, ShareRequest> shareRequestsById = new HashMap<>();
+    private final Map<String, ShareRequest> shareRequestsById = new ConcurrentHashMap<>();
 
     public KitShareManager(Plugin plugin) {
         this.plugin = plugin;
-        kitShareMap = new HashMap<>();
+        kitShareMap = new ConcurrentHashMap<>();
         instance = this;
+    }
+
+    public void shutdown() {
+        for (ShareRequest request : shareRequestsById.values()) {
+            request.cancelExpiryTask();
+        }
+        shareRequestsById.clear();
+        if (kitShareMap != null) {
+            kitShareMap.clear();
+        }
     }
 
     public static KitShareManager get() {
@@ -94,12 +103,7 @@ public class KitShareManager {
                 Lang.get().send(p, "info.share-kit-direct-hint");
                 SoundManager.playSuccess(p);
 
-                new BukkitRunnable() {
-                    @Override
-                    public void run() {
-                        kitShareMap.remove(id);
-                    }
-                }.runTaskLater(plugin, 15 * 60 * 20);
+                FoliaScheduler.runAsyncLater(plugin, () -> kitShareMap.remove(id), 15L * 60L * 20L);
 
             } else {
                 Lang.get().send(p, "error.unexpected");
@@ -125,12 +129,7 @@ public class KitShareManager {
                 Lang.get().send(p, "info.share-ec-direct-hint");
                 SoundManager.playSuccess(p);
 
-                new BukkitRunnable() {
-                    @Override
-                    public void run() {
-                        kitShareMap.remove(id);
-                    }
-                }.runTaskLater(plugin, 15 * 60 * 20);
+                FoliaScheduler.runAsyncLater(plugin, () -> kitShareMap.remove(id), 15L * 60L * 20L);
 
             } else {
                 Lang.get().send(p, "error.unexpected");
@@ -347,18 +346,14 @@ public class KitShareManager {
 
         shareRequestsById.put(request.getId(), request);
 
-        BukkitTask expiryTask = new BukkitRunnable() {
-            @Override
-            public void run() {
-                if (shareRequestsById.remove(request.getId()) == null) {
-                    return;
-                }
-                Player sender = Bukkit.getPlayer(request.getSenderId());
-                if (sender != null) {
-                    Lang.get().send(sender, "info.share-request-expired", "player", PlayerUtil.getPlayerName(request.getTargetId()));
-                }
+        FoliaScheduler.TaskHandle expiryTask = FoliaScheduler.runGlobalLater(plugin, () -> {
+            if (shareRequestsById.remove(request.getId()) == null) {
+                return;
             }
-        }.runTaskLater(plugin, REQUEST_EXPIRY_SECONDS * 20L);
+            FoliaScheduler.runForPlayerOrGlobal(plugin, request.getSenderId(), onlineSender -> {
+                Lang.get().send(onlineSender, "info.share-request-expired", "player", PlayerUtil.getPlayerName(request.getTargetId()));
+            }, null);
+        }, REQUEST_EXPIRY_SECONDS * 20L);
         request.setExpiryTask(expiryTask);
 
         Lang.get().send(sender, "info.share-request-sent",

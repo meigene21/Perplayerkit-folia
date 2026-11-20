@@ -29,6 +29,7 @@ import dev.noah.perplayerkit.kitdata.KitDataService.ImportPlan;
 import dev.noah.perplayerkit.kitdata.KitDataService.Scope;
 import dev.noah.perplayerkit.kitdata.KitDataSnapshot;
 import dev.noah.perplayerkit.kitdata.KitDataSnapshot.PublicKitEntry;
+import dev.noah.perplayerkit.util.FoliaScheduler;
 import dev.noah.perplayerkit.util.Lang;
 import org.bukkit.Bukkit;
 import org.bukkit.Material;
@@ -125,7 +126,7 @@ public class KitDataCommand implements CommandExecutor, TabCompleter {
         }
 
         Lang.get().send(sender, "info.kitdata-export-starting", "scope", scope.lowercase(), "file", fileName);
-        Bukkit.getScheduler().runTaskAsynchronously(plugin, () -> runExport(sender, scope, file, fileName));
+        FoliaScheduler.runAsync(plugin, () -> runExport(sender, scope, file, fileName));
     }
 
     private void runExport(CommandSender sender, Scope scope, File file, String fileName) {
@@ -185,7 +186,7 @@ public class KitDataCommand implements CommandExecutor, TabCompleter {
         }
 
         Lang.get().send(sender, "info.kitdata-import-starting", "file", fileName);
-        Bukkit.getScheduler().runTaskAsynchronously(plugin, () -> runImport(sender, file, fileName, confirmed));
+        FoliaScheduler.runAsync(plugin, () -> runImport(sender, file, fileName, confirmed));
     }
 
     private void runImport(CommandSender sender, File file, String fileName, boolean confirmed) {
@@ -216,9 +217,9 @@ public class KitDataCommand implements CommandExecutor, TabCompleter {
             plugin.getLogger().info("[KitData] Imported " + snapshot.totalEntries() + " entries from "
                     + fileName + " (created by plugin version " + result.pluginVersion() + ")");
 
-            // Config changes and cache reloads have to happen on the main thread.
+            // Config changes and cache reloads have to happen on the global region / main thread.
             releaseInFinally = false;
-            Bukkit.getScheduler().runTask(plugin, () -> {
+            FoliaScheduler.runGlobal(plugin, () -> {
                 try {
                     applyBukkitSideEffects(snapshot);
                     sendImportSuccess(sender, fileName, snapshot);
@@ -299,7 +300,7 @@ public class KitDataCommand implements CommandExecutor, TabCompleter {
                 .filter(importedOwners::contains)
                 .toList();
         if (!toRefresh.isEmpty()) {
-            Bukkit.getScheduler().runTaskAsynchronously(plugin,
+            FoliaScheduler.runAsync(plugin,
                     () -> toRefresh.forEach(uuid -> KitManager.get().loadPlayerDataFromDB(uuid)));
         }
     }
@@ -319,17 +320,7 @@ public class KitDataCommand implements CommandExecutor, TabCompleter {
      * re-fetched so nothing is sent to someone who logged off mid-operation.
      */
     private void runOnMain(CommandSender sender, Consumer<CommandSender> action) {
-        if (sender instanceof Player player) {
-            UUID uuid = player.getUniqueId();
-            Bukkit.getScheduler().runTask(plugin, () -> {
-                Player current = Bukkit.getPlayer(uuid);
-                if (current != null) {
-                    action.accept(current);
-                }
-            });
-        } else {
-            Bukkit.getScheduler().runTask(plugin, () -> action.accept(sender));
-        }
+        FoliaScheduler.runForSender(plugin, sender, action);
     }
 
     @Override

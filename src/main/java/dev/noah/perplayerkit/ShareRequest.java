@@ -18,12 +18,13 @@
  */
 package dev.noah.perplayerkit;
 
+import dev.noah.perplayerkit.util.FoliaScheduler;
 import org.bukkit.inventory.ItemStack;
-import org.bukkit.scheduler.BukkitTask;
 import org.jetbrains.annotations.Nullable;
 
 import java.util.Map;
 import java.util.UUID;
+import java.util.concurrent.atomic.AtomicReference;
 
 /**
  * A pending player-to-player share, snapshotted at request time so it stays
@@ -46,7 +47,7 @@ public final class ShareRequest {
     private final ItemStack[] contents;
     private final Map<Integer, ItemStack[]> kits;
     private final Map<Integer, ItemStack[]> enderchests;
-    private BukkitTask expiryTask;
+    private final AtomicReference<FoliaScheduler.TaskHandle> expiryTask = new AtomicReference<>();
 
     private ShareRequest(String id, Type type, UUID senderId, String senderName, UUID targetId,
                          ItemStack[] contents, Map<Integer, ItemStack[]> kits, Map<Integer, ItemStack[]> enderchests) {
@@ -105,14 +106,14 @@ public final class ShareRequest {
         return enderchests;
     }
 
-    public void setExpiryTask(@Nullable BukkitTask expiryTask) {
-        this.expiryTask = expiryTask;
+    public void setExpiryTask(@Nullable FoliaScheduler.TaskHandle expiryTask) {
+        this.expiryTask.set(expiryTask);
     }
 
     public void cancelExpiryTask() {
-        if (expiryTask != null) {
-            expiryTask.cancel();
-            expiryTask = null;
+        FoliaScheduler.TaskHandle task = expiryTask.getAndSet(null);
+        if (task != null) {
+            task.cancel();
         }
     }
 }

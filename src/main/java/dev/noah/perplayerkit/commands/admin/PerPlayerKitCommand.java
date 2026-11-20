@@ -21,6 +21,7 @@ package dev.noah.perplayerkit.commands.admin;
 import dev.noah.perplayerkit.starter.StarterExporter;
 import dev.noah.perplayerkit.starter.StarterSetup;
 import dev.noah.perplayerkit.storage.StorageMigrator;
+import dev.noah.perplayerkit.util.FoliaScheduler;
 import dev.noah.perplayerkit.util.Lang;
 import dev.noah.perplayerkit.util.LocationAccess;
 import dev.noah.perplayerkit.util.LocationFeature;
@@ -265,7 +266,7 @@ public class PerPlayerKitCommand implements CommandExecutor, TabCompleter {
         Lang.get().send(sender, "info.migration-starting", "source", sourceType, "destination", destinationType);
         Lang.get().send(sender, "info.migration-large-dataset");
 
-        Bukkit.getScheduler().runTaskAsynchronously(plugin, () -> runMigration(sender, sourceType, destinationType));
+        FoliaScheduler.runAsync(plugin, () -> runMigration(sender, sourceType, destinationType));
         return true;
     }
 
@@ -289,11 +290,11 @@ public class PerPlayerKitCommand implements CommandExecutor, TabCompleter {
         StorageMigrator.MigrationResult result = migrator.migrate(
                 sourceType,
                 destinationType,
-                message -> Bukkit.getScheduler().runTask(plugin,
-                        () -> Lang.get().send(sender, "info.migration-progress", "message", message))
+                message -> FoliaScheduler.runForSender(plugin, sender,
+                        current -> Lang.get().send(current, "info.migration-progress", "message", message))
         );
 
-        Bukkit.getScheduler().runTask(plugin, () -> sendMigrationResult(sender, destinationType, result));
+        FoliaScheduler.runForSender(plugin, sender, current -> sendMigrationResult(current, destinationType, result));
     }
 
     private void sendMigrationResult(CommandSender sender, String destinationType, StorageMigrator.MigrationResult result) {

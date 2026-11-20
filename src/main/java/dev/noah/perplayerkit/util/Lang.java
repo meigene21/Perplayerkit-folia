@@ -46,14 +46,16 @@ public class Lang {
     private static Lang instance;
 
     private final Plugin plugin;
-    private final BukkitAudiences audience;
+    private volatile BukkitAudiences audience;
     private final YamlConfiguration lang;
     private final YamlConfiguration fallback;
     private final String activeLang;
 
     public Lang(Plugin plugin) {
         this.plugin = plugin;
-        this.audience = BukkitAudiences.create(plugin);
+        // On Paper/Folia, AudienceCompat uses the server's native Adventure API,
+        // avoiding adventure-platform-bukkit initialization on Folia.
+        this.audience = AudienceCompat.isAvailable() ? null : BukkitAudiences.create(plugin);
         extractBundledLangFiles();
 
         String configured = plugin.getConfig().getString("language", DEFAULT_LANG);
@@ -110,6 +112,14 @@ public class Lang {
             instance = new Lang(cfg);
         } catch (IOException e) {
             instance = new Lang(new YamlConfiguration());
+        }
+    }
+
+    public void shutdown() {
+        BukkitAudiences current = audience;
+        if (current != null) {
+            audience = null;
+            current.close();
         }
     }
 
@@ -244,8 +254,17 @@ public class Lang {
         if (sender instanceof Player && AudienceCompat.send(sender, msg)) {
             return;
         }
-        if (audience != null && sender instanceof Player p) {
-            audience.player(p).sendMessage(msg);
+        BukkitAudiences current = audience;
+        if (current == null && plugin != null && !AudienceCompat.isAvailable() && sender instanceof Player) {
+            synchronized (this) {
+                if (audience == null) {
+                    audience = BukkitAudiences.create(plugin);
+                }
+                current = audience;
+            }
+        }
+        if (current != null && sender instanceof Player p) {
+            current.player(p).sendMessage(msg);
         } else {
             // Console/RCON/command blocks: adventure-platform picks its console
             // facet by sniffing the server version and silently drops messages

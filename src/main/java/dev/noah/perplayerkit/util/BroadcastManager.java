@@ -23,6 +23,7 @@ import net.kyori.adventure.platform.bukkit.BukkitAudiences;
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.minimessage.MiniMessage;
 import org.bukkit.Bukkit;
+import org.bukkit.Location;
 import org.bukkit.World;
 import org.bukkit.entity.Player;
 import org.bukkit.plugin.Plugin;
@@ -40,12 +41,28 @@ public class BroadcastManager {
     private final Plugin plugin;
     private final CooldownManager repairBroadcastCooldown = new CooldownManager(5);
     private final CooldownManager kitroomBroadcastCooldown = new CooldownManager(15);
-    private final BukkitAudiences audience;
+    private volatile BukkitAudiences audience;
+    private volatile FoliaScheduler.TaskHandle scheduledBroadcastTask;
 
     public BroadcastManager(Plugin plugin) {
         this.plugin = plugin;
-        audience = BukkitAudiences.create(plugin);
+        // On Paper/Folia, AudienceCompat uses the server's native Adventure API,
+        // avoiding adventure-platform-bukkit initialization on Folia.
+        this.audience = AudienceCompat.isAvailable() ? null : BukkitAudiences.create(plugin);
         instance = this;
+    }
+
+    public void shutdown() {
+        FoliaScheduler.TaskHandle task = scheduledBroadcastTask;
+        if (task != null) {
+            task.cancel();
+            scheduledBroadcastTask = null;
+        }
+        BukkitAudiences current = audience;
+        if (current != null) {
+            audience = null;
+            current.close();
+        }
     }
 
     public static BroadcastManager get() {
@@ -74,19 +91,38 @@ public class BroadcastManager {
     }
 
     private void broadcastMessage(Player player, String message, String permission) {
-        World world = player.getWorld();
+        Location origin = player.getLocation();
+        World world = origin.getWorld();
+        if (world == null) {
+            return;
+        }
 
         if (Bukkit.getPluginManager().getPlugin("PlaceholderAPI") != null) {
             message = PlaceholderAPI.setPlaceholders(player, message);
         }
 
-        Component prefix = Lang.get().prefix();
-        Component body = TextUtil.parse(message);
+        Component fullMessage = Lang.get().prefix().append(TextUtil.parse(message));
+        double maxDistanceSquared = (double) broadcastDistance * broadcastDistance;
         for (Player broadcastPlayer : world.getPlayers()) {
-            if (broadcastPlayer.getLocation().distance(player.getLocation()) < broadcastDistance) {
-                if (broadcastPlayer.hasPermission(permission)) {
-                    sendComponentMessage(broadcastPlayer, prefix.append(body));
+            if (!FoliaScheduler.isFolia() || FoliaScheduler.isOwnedByCurrentRegion(broadcastPlayer)) {
+                Location targetLoc = broadcastPlayer.getLocation();
+                if (world.equals(targetLoc.getWorld())
+                        && targetLoc.distanceSquared(origin) < maxDistanceSquared
+                        && broadcastPlayer.hasPermission(permission)) {
+                    sendComponentMessage(broadcastPlayer, fullMessage);
                 }
+            } else {
+                FoliaScheduler.runEntity(plugin, broadcastPlayer, () -> {
+                    if (!broadcastPlayer.isOnline()) {
+                        return;
+                    }
+                    Location targetLoc = broadcastPlayer.getLocation();
+                    if (world.equals(targetLoc.getWorld())
+                            && targetLoc.distanceSquared(origin) < maxDistanceSquared
+                            && broadcastPlayer.hasPermission(permission)) {
+                        sendComponentMessage(broadcastPlayer, fullMessage);
+                    }
+                });
             }
         }
     }
@@ -175,12 +211,14 @@ public class BroadcastManager {
         int[] index = {0};
 
         if (plugin.getConfig().getBoolean("broadcasts.scheduled.enabled") && !messages.isEmpty()) {
-            Bukkit.getScheduler().runTaskTimer(plugin, () -> {
+            long periodTicks = Math.max(1, plugin.getConfig().getInt("broadcasts.scheduled.period-seconds", 90)) * 20L;
+            scheduledBroadcastTask = FoliaScheduler.runGlobalTimer(plugin, () -> {
+                Component current = messages.get(index[0]);
                 for (Player player : Bukkit.getOnlinePlayers()) {
-                    sendComponentMessage(player, messages.get(index[0]));
+                    sendComponentMessage(player, current);
                 }
                 index[0] = (index[0] + 1) % messages.size();
-            }, 0, Math.max(1, plugin.getConfig().getInt("broadcasts.scheduled.period-seconds", 90)) * 20L);
+            }, 1L, periodTicks);
         }
     }
 
@@ -191,7 +229,18 @@ public class BroadcastManager {
         if (AudienceCompat.send(player, message)) {
             return;
         }
-        audience.player(player).sendMessage(message);
+        BukkitAudiences current = audience;
+        if (current == null && plugin != null) {
+            synchronized (this) {
+                if (audience == null) {
+                    audience = BukkitAudiences.create(plugin);
+                }
+                current = audience;
+            }
+        }
+        if (current != null) {
+            current.player(player).sendMessage(message);
+        }
     }
 
     public enum MessageKey {

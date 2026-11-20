@@ -20,6 +20,7 @@ package dev.noah.perplayerkit.commands.inspect;
 
 import dev.noah.perplayerkit.KitManager;
 import dev.noah.perplayerkit.util.BroadcastManager;
+import dev.noah.perplayerkit.util.FoliaScheduler;
 import dev.noah.perplayerkit.util.KitSlots;
 import dev.noah.perplayerkit.util.Lang;
 import dev.noah.perplayerkit.util.SoundManager;
@@ -88,18 +89,12 @@ public abstract class AbstractInspectCommand implements CommandExecutor, TabComp
         CompletableFuture<Void> future = resolvePlayerIdentifierAsync(args[0])
                 .thenCompose(targetUuid -> {
                     if (targetUuid == null) {
-                        Bukkit.getScheduler().runTask(plugin, () -> {
-                            Player currentSender = Bukkit.getPlayer(senderUuid);
-                            if (currentSender == null) {
-                                return;
-                            }
-                            showPlayerNotFound(currentSender);
-                        });
+                        FoliaScheduler.runForPlayerOrGlobal(plugin, senderUuid, this::showPlayerNotFound, null);
                         return CompletableFuture.completedFuture(null);
                     }
 
                     CompletableFuture<Boolean> targetOnlineFuture = new CompletableFuture<>();
-                    Bukkit.getScheduler().runTask(plugin,
+                    FoliaScheduler.runGlobal(plugin,
                             () -> targetOnlineFuture.complete(Bukkit.getPlayer(targetUuid) != null));
 
                     return targetOnlineFuture.thenCompose(targetOnline -> {
@@ -107,30 +102,20 @@ public abstract class AbstractInspectCommand implements CommandExecutor, TabComp
                                 ? CompletableFuture.completedFuture(null)
                                 : CompletableFuture.runAsync(() -> loadSlotFromDB(targetUuid, slot));
 
-                        return loadFuture.thenRun(() -> Bukkit.getScheduler().runTask(plugin, () -> {
-                            Player currentSender = Bukkit.getPlayer(senderUuid);
-                            if (currentSender == null) {
-                                return;
-                            }
-
+                        return loadFuture.thenRun(() -> FoliaScheduler.runForPlayerOrGlobal(plugin, senderUuid, currentSender -> {
                             Player currentTarget = Bukkit.getPlayer(targetUuid);
                             showInspectResult(currentSender, currentTarget, targetUuid, slot);
-                        }));
+                        }, null));
                     });
                 });
 
         future.exceptionally(ex -> {
-            Bukkit.getScheduler().runTask(plugin, () -> {
-                plugin.getLogger().severe(loadErrorLogMessage() + ": " + ex.getMessage());
-                Player currentSender = Bukkit.getPlayer(senderUuid);
-                if (currentSender == null) {
-                    return;
-                }
-
+            plugin.getLogger().severe(loadErrorLogMessage() + ": " + ex.getMessage());
+            FoliaScheduler.runForPlayerOrGlobal(plugin, senderUuid, currentSender -> {
                 BroadcastManager.get().sendComponentMessage(currentSender,
                         errorPrefix().append(Lang.get().component(loadErrorUserKey())));
                 SoundManager.playFailure(currentSender);
-            });
+            }, null);
             return null;
         });
 

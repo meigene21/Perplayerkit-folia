@@ -19,6 +19,7 @@
 package dev.noah.perplayerkit;
 
 import dev.noah.perplayerkit.util.BroadcastManager;
+import dev.noah.perplayerkit.util.FoliaScheduler;
 import dev.noah.perplayerkit.util.IDUtil;
 import dev.noah.perplayerkit.util.KitSlots;
 import dev.noah.perplayerkit.util.Lang;
@@ -33,6 +34,7 @@ import org.bukkit.inventory.meta.BlockStateMeta;
 import java.io.IOException;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.CopyOnWriteArrayList;
 import dev.noah.perplayerkit.storage.StorageWorkQueue;
 
 public class KitManager {
@@ -55,7 +57,7 @@ public class KitManager {
         this.plugin = plugin;
         lastKitUsedByPlayer = new ConcurrentHashMap<>();
         storageWork = new StorageWorkQueue(plugin.getLogger());
-        publicKitList = new ArrayList<>();
+        publicKitList = new CopyOnWriteArrayList<>();
         kitByKitIDMap = new ConcurrentHashMap<>();
         instance = this;
     }
@@ -485,7 +487,7 @@ public class KitManager {
             return new LoadedPlayerData(data, readStoredData(KitSelection.kitKey(uuid)), readStoredData(KitSelection.enderchestKey(uuid)));
         }).whenComplete((data, error) -> {
             if (!plugin.isEnabled()) return;
-            plugin.getServer().getScheduler().runTask(plugin, () -> {
+            Runnable apply = () -> {
                 if (sessions.get(uuid) != session) return;
                 if (error != null) {
                     Player player = Bukkit.getPlayer(uuid);
@@ -508,7 +510,8 @@ public class KitManager {
                 parsed.forEach(kitByKitIDMap::putIfAbsent);
                 restoreSelections(uuid, data.inventorySelection(), data.enderchestSelection());
                 loading.remove(uuid);
-            });
+            };
+            FoliaScheduler.runForPlayerOrGlobal(plugin, uuid, player -> apply.run(), apply);
         });
     }
 

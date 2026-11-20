@@ -22,6 +22,7 @@ import dev.noah.perplayerkit.ItemPurgeService;
 import dev.noah.perplayerkit.KitManager;
 import dev.noah.perplayerkit.PerPlayerKit;
 import dev.noah.perplayerkit.commands.inspect.InspectCommandUtil;
+import dev.noah.perplayerkit.util.FoliaScheduler;
 import dev.noah.perplayerkit.util.Lang;
 import org.bukkit.Bukkit;
 import org.bukkit.Material;
@@ -96,7 +97,7 @@ public class PurgeItemCommand implements CommandExecutor, TabCompleter {
         }
 
         Lang.get().send(sender, "info.purge-starting-all", "item", item.name());
-        Bukkit.getScheduler().runTaskAsynchronously(plugin, () -> runPurge(sender, item, null));
+        FoliaScheduler.runAsync(plugin, () -> runPurge(sender, item, null));
     }
 
     private void handlePlayers(CommandSender sender, Material item, List<String> identifiers) {
@@ -127,7 +128,7 @@ public class PurgeItemCommand implements CommandExecutor, TabCompleter {
 
             runOnMain(sender, current -> Lang.get().send(current, "info.purge-starting-players",
                     "item", item.name(), "count", String.valueOf(resolution.uuids().size())));
-            Bukkit.getScheduler().runTaskAsynchronously(plugin,
+            FoliaScheduler.runAsync(plugin,
                     () -> runPurge(sender, item, resolution.uuids()));
         });
     }
@@ -193,17 +194,7 @@ public class PurgeItemCommand implements CommandExecutor, TabCompleter {
      * re-fetched so nothing is sent to someone who logged off mid-purge.
      */
     private void runOnMain(CommandSender sender, Consumer<CommandSender> action) {
-        if (sender instanceof Player player) {
-            UUID uuid = player.getUniqueId();
-            Bukkit.getScheduler().runTask(plugin, () -> {
-                Player current = Bukkit.getPlayer(uuid);
-                if (current != null) {
-                    action.accept(current);
-                }
-            });
-        } else {
-            Bukkit.getScheduler().runTask(plugin, () -> action.accept(sender));
-        }
+        FoliaScheduler.runForSender(plugin, sender, action);
     }
 
     @Override

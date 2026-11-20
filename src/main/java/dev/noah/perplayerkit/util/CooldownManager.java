@@ -20,23 +20,25 @@ package dev.noah.perplayerkit.util;
 
 import org.bukkit.entity.Player;
 
-import java.util.HashMap;
+import java.util.Map;
 import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
 
 public class CooldownManager {
 
     private final long cooldownInSeconds;
-    private final HashMap<String,Long> cooldownMap;
+    private final Map<String, Long> cooldownMap;
 
     public CooldownManager(long cooldownInSeconds) {
         this.cooldownInSeconds = cooldownInSeconds;
-        this.cooldownMap = new HashMap<>();
+        this.cooldownMap = new ConcurrentHashMap<>();
     }
 
     //check cooldown
     public boolean isOnCooldown(String key) {
-        if (!cooldownMap.containsKey(key)) return false;
-        return System.currentTimeMillis() - cooldownMap.get(key) < cooldownInSeconds * 1000;
+        Long timestamp = cooldownMap.get(key);
+        if (timestamp == null) return false;
+        return System.currentTimeMillis() - timestamp < cooldownInSeconds * 1000;
     }
 
     public boolean isOnCooldown(UUID uuid) {
@@ -63,7 +65,9 @@ public class CooldownManager {
 
     //get time left in seconds
     public int getTimeLeft(String key) {
-        return (int) (cooldownInSeconds - (System.currentTimeMillis() - cooldownMap.get(key)) / 1000);
+        Long timestamp = cooldownMap.get(key);
+        if (timestamp == null) return 0;
+        return (int) Math.max(0, cooldownInSeconds - (System.currentTimeMillis() - timestamp) / 1000);
     }
 
     public int getTimeLeft(UUID uuid) {

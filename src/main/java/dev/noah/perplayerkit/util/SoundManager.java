@@ -59,9 +59,17 @@ public class SoundManager {
 
     private static void play(Player player, Sound sound) {
         // exit if sounds are disabled
-        if (!PerPlayerKit.getPlugin().getConfig().getBoolean("sounds.enabled", true)) {
+        if (player == null || !PerPlayerKit.getPlugin().getConfig().getBoolean("sounds.enabled", true)) {
             return;
         }
-        player.playSound(player.getLocation(), sound, 1.0f, 1.0f);
+        if (!FoliaScheduler.isFolia() || FoliaScheduler.isOwnedByCurrentRegion(player)) {
+            player.playSound(player.getLocation(), sound, 1.0f, 1.0f);
+        } else {
+            FoliaScheduler.runEntity(PerPlayerKit.getPlugin(), player, () -> {
+                if (player.isOnline()) {
+                    player.playSound(player.getLocation(), sound, 1.0f, 1.0f);
+                }
+            });
+        }
     }
 }

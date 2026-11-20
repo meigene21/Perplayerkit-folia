@@ -28,20 +28,21 @@ import org.bukkit.inventory.meta.*;
 import org.bukkit.plugin.Plugin;
 import org.bukkit.potion.PotionEffect;
 import java.util.*;
+import java.util.concurrent.ConcurrentHashMap;
 
 /** Applies one configured policy to copied items, including stored enchants and nested contents. */
 public class ItemFilter {
-    public static Set<String> whitelist;
+    public static volatile Set<String> whitelist;
     private static ItemFilter instance;
     private static final int MAX_CONTAINER_DEPTH = 16;
     private final ItemFilterRules.Settings settings;
     private final Plugin plugin;
-    private final Set<String> warnings = new HashSet<>();
+    private final Set<String> warnings = ConcurrentHashMap.newKeySet();
 
     public ItemFilter(Plugin plugin) {
         this.plugin = plugin;
         this.settings = ItemFilterRules.parse(plugin.getConfig());
-        whitelist = new HashSet<>();
+        whitelist = ConcurrentHashMap.newKeySet();
         instance = this;
     }
     public static ItemFilter get() {
@@ -139,15 +140,22 @@ public class ItemFilter {
         return (maxLevel > 0 && level > maxLevel) || (maxSeconds > 0 && (ticks < 0 || ticks > (long) maxSeconds * 20));
     }
     public void addToWhitelist(Collection<ItemStack[]> pages) {
-        for (ItemStack[] page : pages) if (page != null) for (ItemStack item : page) addWhitelistedItem(item, 0);
+        Set<String> target = whitelist;
+        for (ItemStack[] page : pages) if (page != null) for (ItemStack item : page) addWhitelistedItem(target, item, 0);
     }
-    private void addWhitelistedItem(ItemStack item, int depth) {
+    /** Atomically replaces the whitelist snapshot so concurrent region threads never observe an empty set mid-reload. */
+    public void replaceWhitelist(Collection<ItemStack[]> pages) {
+        Set<String> updated = ConcurrentHashMap.newKeySet();
+        for (ItemStack[] page : pages) if (page != null) for (ItemStack item : page) addWhitelistedItem(updated, item, 0);
+        whitelist = updated;
+    }
+    private void addWhitelistedItem(Set<String> target, ItemStack item, int depth) {
         if (item == null || item.getType().isAir() || depth > MAX_CONTAINER_DEPTH) return;
-        whitelist.add(item.getType().name());
+        target.add(item.getType().name());
         ItemMeta meta = item.getItemMeta();
         if (meta instanceof BlockStateMeta block && block.getBlockState() instanceof Container container)
-            for (ItemStack nested : container.getInventory().getContents()) addWhitelistedItem(nested, depth + 1);
-        if (meta instanceof BundleMeta bundle) for (ItemStack nested : bundle.getItems()) addWhitelistedItem(nested, depth + 1);
+            for (ItemStack nested : container.getInventory().getContents()) addWhitelistedItem(target, nested, depth + 1);
+        if (meta instanceof BundleMeta bundle) for (ItemStack nested : bundle.getItems()) addWhitelistedItem(target, nested, depth + 1);
     }
-    public void clearWhitelist() { whitelist.clear(); }
+    public void clearWhitelist() { whitelist = ConcurrentHashMap.newKeySet(); }
 }

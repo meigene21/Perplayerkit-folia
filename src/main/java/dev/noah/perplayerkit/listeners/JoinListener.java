@@ -22,16 +22,15 @@ import dev.noah.perplayerkit.KitManager;
 import dev.noah.perplayerkit.UpdateChecker;
 import dev.noah.perplayerkit.starter.StarterSetup;
 import dev.noah.perplayerkit.util.BroadcastManager;
+import dev.noah.perplayerkit.util.FoliaScheduler;
 import dev.noah.perplayerkit.util.Lang;
 import dev.noah.perplayerkit.util.TextUtil;
 import net.kyori.adventure.text.Component;
-import org.bukkit.Bukkit;
 import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.Listener;
 import org.bukkit.event.player.PlayerJoinEvent;
 import org.bukkit.plugin.Plugin;
-import org.bukkit.scheduler.BukkitRunnable;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -62,7 +61,7 @@ public class JoinListener implements Listener {
             long motdDelay = plugin.getConfig().getBoolean("motd.enabled")
                     ? plugin.getConfig().getLong("motd.delay-seconds") + 2
                     : 2;
-            Bukkit.getScheduler().runTaskLater(plugin, () -> StarterSetup.get().offerAutoSetup(player), motdDelay * 20L);
+            FoliaScheduler.runEntityLater(plugin, player, () -> StarterSetup.get().offerAutoSetup(player), Math.max(1L, motdDelay * 20L));
         }
 
         UUID uuid = player.getUniqueId();
@@ -75,7 +74,8 @@ public class JoinListener implements Listener {
             Lang.get().rawList("motd.message").forEach(message -> motdMessages.add(TextUtil.parse(message)));
 
             // Delay for sending the MOTD
-            Bukkit.getScheduler().runTaskLater(plugin, () -> { if (player.isOnline()) motdMessages.forEach(message -> BroadcastManager.get().sendComponentMessage(player,message)); }, plugin.getConfig().getLong("motd.delay-seconds") * 20L);
+            long delayTicks = Math.max(1L, plugin.getConfig().getLong("motd.delay-seconds") * 20L);
+            FoliaScheduler.runEntityLater(plugin, player, () -> { if (player.isOnline()) motdMessages.forEach(message -> BroadcastManager.get().sendComponentMessage(player, message)); }, delayTicks);
         }
     }
 

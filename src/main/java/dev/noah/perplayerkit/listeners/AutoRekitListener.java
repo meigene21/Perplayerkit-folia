@@ -19,6 +19,7 @@
 package dev.noah.perplayerkit.listeners;
 
 import dev.noah.perplayerkit.KitManager;
+import dev.noah.perplayerkit.util.FoliaScheduler;
 import dev.noah.perplayerkit.util.LocationAccess;
 import dev.noah.perplayerkit.util.LocationFeature;
 import dev.noah.perplayerkit.util.RekitKitResolver;
@@ -29,20 +30,18 @@ import org.bukkit.event.Listener;
 import org.bukkit.event.entity.PlayerDeathEvent;
 import org.bukkit.event.player.PlayerRespawnEvent;
 import org.bukkit.event.player.PlayerQuitEvent;
-import org.bukkit.scheduler.BukkitTask;
 import java.util.Map;
-import java.util.HashMap;
 import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
 import org.bukkit.plugin.Plugin;
 
-import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 
 public class AutoRekitListener implements Listener {
     private final Plugin plugin;
-    private final Map<UUID, BukkitTask> pendingRespawns = new HashMap<>();
-    private final Set<String> warnedMissingKits = new HashSet<>();
+    private final Map<UUID, FoliaScheduler.TaskHandle> pendingRespawns = new ConcurrentHashMap<>();
+    private final Set<String> warnedMissingKits = ConcurrentHashMap.newKeySet();
     public AutoRekitListener(Plugin plugin) { this.plugin = plugin; }
 
     @EventHandler
@@ -53,7 +52,7 @@ public class AutoRekitListener implements Listener {
         long delay = Math.max(1, plugin.getConfig().getLong("rekit.respawn.delay-ticks", 0));
         // Check the actual destination after respawning, including later teleports during the delay.
         cancelRespawn(player);
-        BukkitTask task = plugin.getServer().getScheduler().runTaskLater(plugin, () -> {
+        FoliaScheduler.TaskHandle task = FoliaScheduler.runEntityLater(plugin, player, () -> {
             pendingRespawns.remove(player.getUniqueId());
             if (plugin.getServer().getPlayer(player.getUniqueId()) == player)
                 restore(player, "rekit.respawn", "perplayerkit.rekitonrespawn", LocationFeature.REKIT_RESPAWN);
@@ -65,7 +64,7 @@ public class AutoRekitListener implements Listener {
     public void onQuit(PlayerQuitEvent event) { cancelRespawn(event.getPlayer()); }
 
     private void cancelRespawn(Player player) {
-        BukkitTask task = pendingRespawns.remove(player.getUniqueId());
+        FoliaScheduler.TaskHandle task = pendingRespawns.remove(player.getUniqueId());
         if (task != null) task.cancel();
     }
 
@@ -73,7 +72,18 @@ public class AutoRekitListener implements Listener {
     public void onPlayerKill(PlayerDeathEvent event) {
         if (!plugin.getConfig().getBoolean("rekit.kill.enabled", false)) return;
         Player killer = event.getEntity().getKiller();
-        if (killer != null) restore(killer, "rekit.kill", "perplayerkit.rekitonkill", LocationFeature.REKIT_KILL);
+        if (killer == null) return;
+        // On Folia, PlayerDeathEvent fires on the victim's region thread; the killer
+        // may reside in another region (e.g. ranged kill or post-shot teleport).
+        if (!FoliaScheduler.isFolia() || FoliaScheduler.isOwnedByCurrentRegion(killer)) {
+            restore(killer, "rekit.kill", "perplayerkit.rekitonkill", LocationFeature.REKIT_KILL);
+        } else {
+            FoliaScheduler.runEntity(plugin, killer, () -> {
+                if (plugin.getServer().getPlayer(killer.getUniqueId()) == killer) {
+                    restore(killer, "rekit.kill", "perplayerkit.rekitonkill", LocationFeature.REKIT_KILL);
+                }
+            });
+        }
     }
 
     private void restore(Player player, String path, String permission, LocationFeature feature) {

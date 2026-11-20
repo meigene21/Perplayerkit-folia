@@ -22,8 +22,6 @@ import dev.noah.perplayerkit.storage.BackupCapable;
 import dev.noah.perplayerkit.storage.StorageManager;
 import dev.noah.perplayerkit.storage.exceptions.StorageOperationException;
 import org.bukkit.plugin.Plugin;
-import org.bukkit.scheduler.BukkitRunnable;
-import org.bukkit.scheduler.BukkitTask;
 
 import java.io.File;
 import java.io.IOException;
@@ -42,11 +40,11 @@ public class BackupManager {
     private final StorageManager storageManager;
     private final File backupDir;
     private final boolean enabled;
-    private BukkitTask hourlyTask;
-    private BukkitTask dailyTask;
-    private BukkitTask weeklyTask;
-    private BukkitTask monthlyTask;
-    private BukkitTask cleanupTask;
+    private FoliaScheduler.TaskHandle hourlyTask;
+    private FoliaScheduler.TaskHandle dailyTask;
+    private FoliaScheduler.TaskHandle weeklyTask;
+    private FoliaScheduler.TaskHandle monthlyTask;
+    private FoliaScheduler.TaskHandle cleanupTask;
 
     // Time constants
     private static final long HOUR_IN_TICKS = 20 * 60 * 60; // 1 hour in ticks
@@ -98,44 +96,19 @@ public class BackupManager {
         plugin.getLogger().info("Scheduling automatic backups...");
 
         // Schedule hourly backups (every hour)
-        hourlyTask = new BukkitRunnable() {
-            @Override
-            public void run() {
-                performBackup(HOURLY_PREFIX);
-            }
-        }.runTaskTimerAsynchronously(plugin, HOUR_IN_TICKS, HOUR_IN_TICKS);
+        hourlyTask = FoliaScheduler.runAsyncTimer(plugin, () -> performBackup(HOURLY_PREFIX), HOUR_IN_TICKS, HOUR_IN_TICKS);
 
         // Schedule daily backups (every day)
-        dailyTask = new BukkitRunnable() {
-            @Override
-            public void run() {
-                performBackup(DAILY_PREFIX);
-            }
-        }.runTaskTimerAsynchronously(plugin, DAY_IN_TICKS, DAY_IN_TICKS);
+        dailyTask = FoliaScheduler.runAsyncTimer(plugin, () -> performBackup(DAILY_PREFIX), DAY_IN_TICKS, DAY_IN_TICKS);
 
         // Schedule weekly backups (every week)
-        weeklyTask = new BukkitRunnable() {
-            @Override
-            public void run() {
-                performBackup(WEEKLY_PREFIX);
-            }
-        }.runTaskTimerAsynchronously(plugin, WEEK_IN_TICKS, WEEK_IN_TICKS);
+        weeklyTask = FoliaScheduler.runAsyncTimer(plugin, () -> performBackup(WEEKLY_PREFIX), WEEK_IN_TICKS, WEEK_IN_TICKS);
 
         // Schedule monthly backups (every month)
-        monthlyTask = new BukkitRunnable() {
-            @Override
-            public void run() {
-                performBackup(MONTHLY_PREFIX);
-            }
-        }.runTaskTimerAsynchronously(plugin, MONTH_IN_TICKS, MONTH_IN_TICKS);
+        monthlyTask = FoliaScheduler.runAsyncTimer(plugin, () -> performBackup(MONTHLY_PREFIX), MONTH_IN_TICKS, MONTH_IN_TICKS);
 
         // Schedule cleanup task (every 6 hours)
-        cleanupTask = new BukkitRunnable() {
-            @Override
-            public void run() {
-                cleanupOldBackups();
-            }
-        }.runTaskTimerAsynchronously(plugin, HOUR_IN_TICKS * 6, HOUR_IN_TICKS * 6);
+        cleanupTask = FoliaScheduler.runAsyncTimer(plugin, this::cleanupOldBackups, HOUR_IN_TICKS * 6, HOUR_IN_TICKS * 6);
 
         plugin.getLogger().info("Automatic backups scheduled successfully");
     }
@@ -296,12 +269,7 @@ public class BackupManager {
         }
 
         plugin.getLogger().info("Performing manual backup...");
-        new BukkitRunnable() {
-            @Override
-            public void run() {
-                performBackup("manual_");
-            }
-        }.runTaskAsynchronously(plugin);
+        FoliaScheduler.runAsync(plugin, () -> performBackup("manual_"));
     }
 
     /**

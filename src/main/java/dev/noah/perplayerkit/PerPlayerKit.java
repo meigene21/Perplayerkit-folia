@@ -54,6 +54,7 @@ import dev.noah.perplayerkit.storage.exceptions.StorageConnectionException;
 import dev.noah.perplayerkit.storage.exceptions.StorageOperationException;
 import dev.noah.perplayerkit.util.BackupManager;
 import dev.noah.perplayerkit.util.BroadcastManager;
+import dev.noah.perplayerkit.util.FoliaScheduler;
 import dev.noah.perplayerkit.util.KitSlots;
 import dev.noah.perplayerkit.util.Lang;
 import dev.noah.perplayerkit.util.StyleManager;
@@ -77,6 +78,7 @@ public final class PerPlayerKit extends JavaPlugin {
     private KitManager kitManager;
     private BackupManager backupManager;
     private UpdateChecker updateChecker;
+    private FoliaScheduler.TaskHandle keepAliveTask;
 
     public static Plugin getPlugin() {
         return plugin;
@@ -147,7 +149,7 @@ public final class PerPlayerKit extends JavaPlugin {
             getLogger().info("Backup system not needed for non-file-based storage: " + dbType);
         }
 
-        Bukkit.getScheduler().runTaskTimerAsynchronously(this, () -> {
+        keepAliveTask = FoliaScheduler.runAsyncTimer(this, () -> {
 
             if (storageManager.isConnected()) {
                 try {
@@ -161,7 +163,7 @@ public final class PerPlayerKit extends JavaPlugin {
                 attemptDatabaseConnection(false);
             }
 
-        }, 30 * 20, 30 * 20); // runs every 30 seconds
+        }, 30 * 20L, 30 * 20L); // runs every 30 seconds
 
         try {
             loadDatabaseData();
@@ -276,8 +278,25 @@ public final class PerPlayerKit extends JavaPlugin {
 
     @Override
     public void onDisable() {
+        if (keepAliveTask != null) {
+            keepAliveTask.cancel();
+            keepAliveTask = null;
+        }
+        try {
+            KitShareManager.get().shutdown();
+        } catch (IllegalStateException ignored) {
+        }
+        try {
+            BroadcastManager.get().shutdown();
+        } catch (IllegalStateException ignored) {
+        }
+        try {
+            Lang.get().shutdown();
+        } catch (IllegalStateException ignored) {
+        }
         if (updateChecker != null) updateChecker.close();
         if (backupManager != null) backupManager.shutdown();
+        FoliaScheduler.cancelTasks(this);
         if (kitManager != null) kitManager.shutdown();
         closeDatabaseConnection();
     }

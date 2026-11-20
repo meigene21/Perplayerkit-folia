@@ -3,17 +3,17 @@ package dev.noah.perplayerkit.util;
 import org.bukkit.entity.Player;
 import org.bukkit.plugin.Plugin;
 
-import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 
 /** Evaluates global and action rules against the location at the time of use. */
 public final class LocationAccess {
     private static LocationAccess instance;
     private final Plugin plugin;
     private final Map<LocationFeature, LocationRules.Rule> rules;
-    private final Set<String> warnings = new HashSet<>();
+    private final Set<String> warnings = ConcurrentHashMap.newKeySet();
 
     public LocationAccess(Plugin plugin) {
         this.plugin = plugin;
